@@ -205,6 +205,51 @@ const MAX_BUFFER_SIZE = 1000;
 
 export const sessions = new Map<string, Session>();
 
+function getTmuxName(sessionId: string): string {
+  return `openui-${sessionId}`;
+}
+
+function tmuxSessionExists(sessionId: string): boolean {
+  const result = spawnSync(["tmux", "has-session", "-t", getTmuxName(sessionId)], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return result.exitCode === 0;
+}
+
+function killTmuxSession(sessionId: string) {
+  spawnSync(["tmux", "kill-session", "-t", getTmuxName(sessionId)], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+}
+
+function attachPtyOutputHandler(session: Session, ptyProcess: import("bun-pty").IPty, sessionId: string) {
+  const resetInterval = setInterval(() => {
+    if (!sessions.has(sessionId) || !session.pty) {
+      clearInterval(resetInterval);
+      return;
+    }
+    session.recentOutputSize = Math.max(0, session.recentOutputSize - 50);
+  }, 500);
+
+  ptyProcess.onData((data: string) => {
+    session.outputBuffer.push(data);
+    if (session.outputBuffer.length > MAX_BUFFER_SIZE) {
+      session.outputBuffer.shift();
+    }
+
+    session.lastOutputTime = Date.now();
+    session.recentOutputSize += data.length;
+
+    for (const client of session.clients) {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: "output", data }));
+      }
+    }
+  });
+}
+
 export function createSession(params: {
   sessionId: string;
   agentId: string;
@@ -278,13 +323,13 @@ export function createSession(params: {
     gitBranch = getGitBranch(workingDir);
   }
 
-  const ptyProcess = spawnPty("/bin/bash", [], {
+  const tmuxName = getTmuxName(sessionId);
+  const ptyProcess = spawnPty("tmux", ["new-session", "-s", tmuxName], {
     name: "xterm-256color",
     cwd: workingDir,
     env: {
       ...process.env,
       TERM: "xterm-256color",
-      // Pass our session ID so the plugin can include it in status updates
       OPENUI_SESSION_ID: sessionId,
     },
     rows: 30,
@@ -298,7 +343,7 @@ export function createSession(params: {
     agentName,
     command,
     cwd: workingDir,
-    originalCwd: mainRepoPath, // Store mother repo when using worktree
+    originalCwd: mainRepoPath,
     gitBranch: gitBranch || undefined,
     worktreePath,
     createdAt: new Date().toISOString(),
@@ -318,33 +363,7 @@ export function createSession(params: {
   };
 
   sessions.set(sessionId, session);
-
-  // Output decay
-  const resetInterval = setInterval(() => {
-    if (!sessions.has(sessionId) || !session.pty) {
-      clearInterval(resetInterval);
-      return;
-    }
-    session.recentOutputSize = Math.max(0, session.recentOutputSize - 50);
-  }, 500);
-
-  // PTY output handler
-  ptyProcess.onData((data: string) => {
-    session.outputBuffer.push(data);
-    if (session.outputBuffer.length > MAX_BUFFER_SIZE) {
-      session.outputBuffer.shift();
-    }
-
-    session.lastOutputTime = Date.now();
-    session.recentOutputSize += data.length;
-
-    // Just broadcast output - status comes from plugin hooks
-    for (const client of session.clients) {
-      if (client.readyState === 1) {
-        client.send(JSON.stringify({ type: "output", data }));
-      }
-    }
-  });
+  attachPtyOutputHandler(session, ptyProcess, sessionId);
 
   // Run the command (inject plugin-dir for Claude if available)
   const finalCommand = injectPluginDir(command, agentId);
@@ -371,11 +390,48 @@ export function createSession(params: {
   return { session, cwd: workingDir, gitBranch: gitBranch || undefined };
 }
 
+export function restartSession(sessionId: string) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  // Kill the old tmux session if it exists
+  killTmuxSession(sessionId);
+
+  const tmuxName = getTmuxName(sessionId);
+  const ptyProcess = spawnPty("tmux", ["new-session", "-s", tmuxName], {
+    name: "xterm-256color",
+    cwd: session.cwd,
+    env: {
+      ...process.env,
+      TERM: "xterm-256color",
+      OPENUI_SESSION_ID: sessionId,
+    },
+    rows: 30,
+    cols: 120,
+  });
+
+  session.pty = ptyProcess;
+  session.isRestored = false;
+  session.status = "running";
+  session.lastOutputTime = Date.now();
+  session.outputBuffer = [];
+
+  attachPtyOutputHandler(session, ptyProcess, sessionId);
+
+  const finalCommand = injectPluginDir(session.command, session.agentId);
+  setTimeout(() => {
+    ptyProcess.write(`${finalCommand}\r`);
+  }, 300);
+
+  log(`\x1b[38;5;141m[session]\x1b[0m Restarted ${sessionId} in tmux ${tmuxName}`);
+}
+
 export function deleteSession(sessionId: string) {
   const session = sessions.get(sessionId);
   if (!session) return false;
 
   if (session.pty) session.pty.kill();
+  killTmuxSession(sessionId);
 
   sessions.delete(sessionId);
   log(`\x1b[38;5;141m[session]\x1b[0m Killed ${sessionId}`);
@@ -391,9 +447,26 @@ export function restoreSessions() {
   for (const node of state.nodes) {
     const buffer = loadBuffer(node.sessionId);
     const gitBranch = getGitBranch(node.cwd);
+    const hasTmux = tmuxSessionExists(node.sessionId);
+
+    let pty: import("bun-pty").IPty | null = null;
+    let status: import("../types").AgentStatus = "disconnected";
+    let isRestored = true;
+
+    if (hasTmux) {
+      const tmuxName = getTmuxName(node.sessionId);
+      pty = spawnPty("tmux", ["attach-session", "-t", tmuxName], {
+        name: "xterm-256color",
+        rows: 30,
+        cols: 120,
+      });
+      status = "idle";
+      isRestored = false;
+      log(`\x1b[38;5;82m[restore]\x1b[0m Reattached to tmux session ${tmuxName}`);
+    }
 
     const session: Session = {
-      pty: null,
+      pty,
       agentId: node.agentId,
       agentName: node.agentName,
       command: node.command,
@@ -402,7 +475,7 @@ export function restoreSessions() {
       createdAt: node.createdAt,
       clients: new Set(),
       outputBuffer: buffer,
-      status: "disconnected",
+      status,
       lastOutputTime: 0,
       lastInputTime: 0,
       recentOutputSize: 0,
@@ -410,10 +483,15 @@ export function restoreSessions() {
       customColor: node.customColor,
       notes: node.notes,
       nodeId: node.nodeId,
-      isRestored: true,
+      isRestored,
     };
 
     sessions.set(node.sessionId, session);
-    log(`\x1b[38;5;245m[restore]\x1b[0m Restored ${node.sessionId} (${node.agentName}) branch: ${gitBranch || 'none'}`);
+
+    if (pty) {
+      attachPtyOutputHandler(session, pty, node.sessionId);
+    }
+
+    log(`\x1b[38;5;245m[restore]\x1b[0m Restored ${node.sessionId} (${node.agentName}) tmux=${hasTmux ? 'reattached' : 'dead'} branch: ${gitBranch || 'none'}`);
   }
 }

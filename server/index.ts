@@ -118,13 +118,9 @@ setInterval(() => {
   saveState(sessions);
 }, 30000);
 
-// Cleanup on exit
+// Cleanup on exit — don't kill tmux sessions so they can be resumed
 process.on("SIGINT", () => {
-  log("\n\x1b[38;5;245m[server]\x1b[0m Saving state before exit...");
+  log("\n\x1b[38;5;245m[server]\x1b[0m Saving state before exit (tmux sessions will persist)...");
   saveState(sessions);
-  for (const [, session] of sessions) {
-    if (session.pty) session.pty.kill();
-    if (session.stateTrackerPty) session.stateTrackerPty.kill();
-  }
   process.exit(0);
 });

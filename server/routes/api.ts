@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Agent } from "../types";
-import { sessions, createSession, deleteSession, injectPluginDir } from "../services/sessionManager";
+import { sessions, createSession, deleteSession, injectPluginDir, restartSession } from "../services/sessionManager";
 import { loadState, saveState, savePositions, getDataDir } from "../services/persistence";
 import {
   loadConfig,
@@ -216,48 +216,7 @@ apiRoutes.post("/sessions/:sessionId/restart", async (c) => {
   if (!session) return c.json({ error: "Session not found" }, 404);
   if (session.pty) return c.json({ error: "Session already running" }, 400);
 
-  const { spawn } = await import("bun-pty");
-  const ptyProcess = spawn("/bin/bash", [], {
-    name: "xterm-256color",
-    cwd: session.cwd,
-    env: { ...process.env, TERM: "xterm-256color" },
-    rows: 30,
-    cols: 120,
-  });
-
-  session.pty = ptyProcess;
-  session.isRestored = false;
-  session.status = "running";
-  session.lastOutputTime = Date.now();
-
-  const resetInterval = setInterval(() => {
-    if (!sessions.has(sessionId) || !session.pty) {
-      clearInterval(resetInterval);
-      return;
-    }
-    session.recentOutputSize = Math.max(0, session.recentOutputSize - 50);
-  }, 500);
-
-  ptyProcess.onData((data: string) => {
-    session.outputBuffer.push(data);
-    if (session.outputBuffer.length > 1000) {
-      session.outputBuffer.shift();
-    }
-
-    session.lastOutputTime = Date.now();
-    session.recentOutputSize += data.length;
-
-    for (const client of session.clients) {
-      if (client.readyState === 1) {
-        client.send(JSON.stringify({ type: "output", data }));
-      }
-    }
-  });
-
-  const finalCommand = injectPluginDir(session.command, session.agentId);
-  setTimeout(() => {
-    ptyProcess.write(`${finalCommand}\r`);
-  }, 300);
+  restartSession(sessionId);
 
   log(`\x1b[38;5;141m[session]\x1b[0m Restarted ${sessionId}`);
   return c.json({ success: true });
