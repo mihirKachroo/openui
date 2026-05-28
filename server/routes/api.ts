@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Agent } from "../types";
 import { sessions, createSession, deleteSession, injectPluginDir, restartSession } from "../services/sessionManager";
+import { markReady } from "../services/sessionStartQueue";
 import { loadState, saveState, savePositions, saveCanvases, getDataDir } from "../services/persistence";
 import {
   loadConfig,
@@ -280,9 +281,13 @@ apiRoutes.post("/status-update", async (c) => {
   }
 
   if (session) {
-    // Store Claude session ID mapping if we have it
+    // Store Claude session ID and signal queue on SessionStart
     if (claudeSessionId && !session.claudeSessionId) {
       session.claudeSessionId = claudeSessionId;
+    }
+    if (hookEvent === "SessionStart" && openuiSessionId) {
+      markReady(openuiSessionId);
+      saveState(sessions);
     }
 
     // Handle pre_tool/post_tool for permission detection

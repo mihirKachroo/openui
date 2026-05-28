@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, renameSync } from "fs";
 import { join } from "path";
+import { homedir } from "os";
 import type { PersistedState, Session } from "../types";
 
-// Use local .openui folder where user ran openui from
-const LAUNCH_CWD = process.env.LAUNCH_CWD || process.cwd();
-const DATA_DIR = join(LAUNCH_CWD, ".openui");
+const DATA_DIR = join(homedir(), ".openui");
+const LEGACY_DIR = join(process.env.LAUNCH_CWD || process.cwd(), ".openui");
 const STATE_FILE = join(DATA_DIR, "state.json");
 const BUFFERS_DIR = join(DATA_DIR, "buffers");
 
@@ -57,6 +57,8 @@ export function saveState(sessions: Map<string, Session>) {
       icon: session.icon,
       position: session.position || existingNode?.position || { x: 0, y: 0 },
       canvasId: session.canvasId,
+      claudeSessionId: session.claudeSessionId,
+      autoResumed: session.autoResumed,
     });
 
     saveBuffer(sessionId, session.outputBuffer);
@@ -125,6 +127,29 @@ export function saveCanvases(canvases: { id: string; name: string }[]) {
     writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   } catch (e) {
     console.error("Failed to save canvases:", e);
+  }
+}
+
+export function migrateLegacyState(): boolean {
+  const legacyState = join(LEGACY_DIR, "state.json");
+  if (!existsSync(legacyState)) return false;
+  if (existsSync(STATE_FILE)) return false;
+
+  console.log(`[persistence] Migrating state from ${LEGACY_DIR} to ${DATA_DIR}`);
+  ensureDirs();
+
+  try {
+    writeFileSync(STATE_FILE, readFileSync(legacyState, "utf-8"));
+    const legacyBuffers = join(LEGACY_DIR, "buffers");
+    if (existsSync(legacyBuffers)) {
+      for (const file of readdirSync(legacyBuffers)) {
+        copyFileSync(join(legacyBuffers, file), join(BUFFERS_DIR, file));
+      }
+    }
+    return true;
+  } catch (e) {
+    console.error("[persistence] Migration failed:", e);
+    return false;
   }
 }
 

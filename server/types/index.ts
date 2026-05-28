@@ -43,6 +43,9 @@ export interface Session {
   permissionTimeout?: ReturnType<typeof setTimeout>;
   // Canvas assignment
   canvasId?: string;
+  // Auto-resume
+  autoResumed?: boolean;
+  icon?: string;
 }
 
 export interface LinearTicket {
@@ -77,6 +80,8 @@ export interface PersistedNode {
   notes?: string;
   position: { x: number; y: number };
   canvasId?: string;
+  claudeSessionId?: string;
+  autoResumed?: boolean;
 }
 
 export interface PersistedCategory {

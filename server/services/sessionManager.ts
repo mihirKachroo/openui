@@ -201,7 +201,7 @@ export function createWorktree(params: {
 }
 
 
-const MAX_BUFFER_SIZE = 1000;
+const MAX_BUFFER_SIZE = 10000;
 
 export const sessions = new Map<string, Session>();
 
@@ -332,6 +332,7 @@ export function createSession(params: {
       ...process.env,
       TERM: "xterm-256color",
       OPENUI_SESSION_ID: sessionId,
+      OPENUI_PORT: String(process.env.PORT || 6968),
     },
     rows: 30,
     cols: 120,
@@ -405,6 +406,7 @@ export function restartSession(sessionId: string) {
       ...process.env,
       TERM: "xterm-256color",
       OPENUI_SESSION_ID: sessionId,
+      OPENUI_PORT: String(process.env.PORT || 6968),
     },
     rows: 30,
     cols: 120,
@@ -467,9 +469,75 @@ export function restoreSessions() {
       nodeId: node.nodeId,
       isRestored: true,
       canvasId: node.canvasId,
+      claudeSessionId: node.claudeSessionId,
     };
 
     sessions.set(node.sessionId, session);
-    log(`\x1b[38;5;245m[restore]\x1b[0m Restored ${node.sessionId} (${node.agentName}) branch: ${gitBranch || 'none'}`);
+    log(`\x1b[38;5;245m[restore]\x1b[0m Restored ${node.sessionId} (${node.agentName}) claudeSession=${node.claudeSessionId || 'none'}`);
+  }
+}
+
+function buildResumeCommand(command: string, agentId: string, claudeSessionId: string): string {
+  let cmd = injectPluginDir(command, agentId);
+  if (agentId === "claude" && claudeSessionId) {
+    if (!cmd.includes("--resume")) {
+      const parts = cmd.split(/\s+/);
+      parts.splice(1, 0, "--resume", claudeSessionId);
+      cmd = parts.join(" ");
+    }
+  }
+  return cmd;
+}
+
+function spawnSessionPty(sessionId: string, cwd: string) {
+  return spawnPty("/bin/bash", [], {
+    name: "xterm-256color",
+    cwd,
+    env: {
+      ...process.env,
+      TERM: "xterm-256color",
+      OPENUI_SESSION_ID: sessionId,
+      OPENUI_PORT: String(process.env.PORT || 6968),
+    },
+    rows: 30,
+    cols: 120,
+  });
+}
+
+export function autoResumeSessions() {
+  const { enqueue } = require("./sessionStartQueue");
+  const resumable: string[] = [];
+
+  for (const [sessionId, session] of sessions) {
+    if (session.pty || !session.claudeSessionId) continue;
+    if (session.agentId !== "claude") continue;
+    resumable.push(sessionId);
+  }
+
+  if (resumable.length === 0) {
+    log(`[auto-resume] No sessions to resume`);
+    return;
+  }
+
+  log(`[auto-resume] Queueing ${resumable.length} session(s) for resume`);
+
+  for (const sessionId of resumable) {
+    enqueue(sessionId, () => {
+      const session = sessions.get(sessionId);
+      if (!session || session.pty) return;
+
+      const pty = spawnSessionPty(sessionId, session.cwd);
+      session.pty = pty;
+      session.isRestored = false;
+      session.autoResumed = true;
+      session.status = "idle";
+      session.outputBuffer = [];
+
+      attachPtyOutputHandler(session, pty, sessionId);
+
+      const cmd = buildResumeCommand(session.command, session.agentId, session.claudeSessionId!);
+      log(`[auto-resume] Resuming ${sessionId}: ${cmd}`);
+      setTimeout(() => pty.write(`${cmd}\r`), 300);
+    });
   }
 }

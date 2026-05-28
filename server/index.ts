@@ -3,8 +3,8 @@ import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import type { ServerWebSocket } from "bun";
 import { apiRoutes } from "./routes/api";
-import { sessions, restoreSessions } from "./services/sessionManager";
-import { saveState } from "./services/persistence";
+import { sessions, restoreSessions, autoResumeSessions } from "./services/sessionManager";
+import { saveState, migrateLegacyState } from "./services/persistence";
 import type { WebSocketData } from "./types";
 
 const app = new Hono();
@@ -22,6 +22,12 @@ app.route("/api", apiRoutes);
 
 // Serve static files
 app.use("/*", serveStatic({ root: "./client/dist" }));
+
+// Migrate from legacy .openui/ in project dir to ~/.openui/
+migrateLegacyState();
+
+// Restore saved sessions before starting the server
+restoreSessions();
 
 // WebSocket server
 Bun.serve<WebSocketData>({
@@ -107,11 +113,11 @@ Bun.serve<WebSocketData>({
   },
 });
 
-// Restore sessions on startup
-restoreSessions();
-
 log(`\x1b[38;5;141m[server]\x1b[0m Running on http://localhost:${PORT}`);
 log(`\x1b[38;5;245m[server]\x1b[0m Launch directory: ${process.env.LAUNCH_CWD || process.cwd()}`);
+
+// Auto-resume saved sessions after a short delay
+setTimeout(() => autoResumeSessions(), 1500);
 
 // Periodic state save
 setInterval(() => {

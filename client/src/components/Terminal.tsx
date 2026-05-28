@@ -65,7 +65,7 @@ export function Terminal({ sessionId, color, nodeId }: TerminalProps) {
         brightWhite: "#ffffff",
       },
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: 100000,
     });
 
     const fitAddon = new FitAddon();
