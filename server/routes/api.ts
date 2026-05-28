@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Agent } from "../types";
 import { sessions, createSession, deleteSession, injectPluginDir, restartSession } from "../services/sessionManager";
-import { loadState, saveState, savePositions, getDataDir } from "../services/persistence";
+import { loadState, saveState, savePositions, saveCanvases, getDataDir } from "../services/persistence";
 import {
   loadConfig,
   saveConfig,
@@ -136,7 +136,7 @@ apiRoutes.get("/state", (c) => {
       isRestored: session?.isRestored,
     };
   }).filter(n => n.isAlive);
-  return c.json({ nodes });
+  return c.json({ nodes, canvases: state.canvases });
 });
 
 apiRoutes.post("/state/positions", async (c) => {
@@ -174,6 +174,7 @@ apiRoutes.post("/sessions", async (c) => {
     branchName,
     baseBranch,
     createWorktree: createWorktreeFlag,
+    canvasId,
   } = body;
 
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -199,6 +200,7 @@ apiRoutes.post("/sessions", async (c) => {
     baseBranch,
     createWorktreeFlag,
     ticketPromptTemplate,
+    canvasId,
   });
 
   saveState(sessions);
@@ -421,6 +423,45 @@ apiRoutes.delete("/categories/:categoryId", (c) => {
   const DATA_DIR = join(process.env.LAUNCH_CWD || process.cwd(), ".openui");
   writeFileSync(join(DATA_DIR, "state.json"), JSON.stringify(state, null, 2));
 
+  return c.json({ success: true });
+});
+
+// ============ Canvases ============
+
+apiRoutes.get("/canvases", (c) => {
+  const state = loadState();
+  return c.json(state.canvases || []);
+});
+
+apiRoutes.post("/canvases", async (c) => {
+  const { id, name } = await c.req.json();
+  const state = loadState();
+  if (!state.canvases) state.canvases = [];
+  state.canvases.push({ id, name });
+  saveCanvases(state.canvases);
+  return c.json({ success: true });
+});
+
+apiRoutes.patch("/canvases/:canvasId", async (c) => {
+  const canvasId = c.req.param("canvasId");
+  const { name } = await c.req.json();
+  const state = loadState();
+  if (!state.canvases) return c.json({ error: "Canvas not found" }, 404);
+  const canvas = state.canvases.find(cv => cv.id === canvasId);
+  if (!canvas) return c.json({ error: "Canvas not found" }, 404);
+  canvas.name = name;
+  saveCanvases(state.canvases);
+  return c.json({ success: true });
+});
+
+apiRoutes.delete("/canvases/:canvasId", (c) => {
+  const canvasId = c.req.param("canvasId");
+  const state = loadState();
+  if (!state.canvases) return c.json({ error: "Canvas not found" }, 404);
+  const index = state.canvases.findIndex(cv => cv.id === canvasId);
+  if (index === -1) return c.json({ error: "Canvas not found" }, 404);
+  state.canvases.splice(index, 1);
+  saveCanvases(state.canvases);
   return c.json({ success: true });
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -8,6 +8,7 @@ import {
   ReactFlowProvider,
   NodeChange,
   applyNodeChanges,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus } from "lucide-react";
@@ -43,11 +44,38 @@ function AppContent() {
     newSessionForNodeId,
     setNewSessionForNodeId,
     sessions,
+    activeCanvasId,
+    setCanvases,
+    canvasViewports,
+    setCanvasViewport,
   } = useStore();
 
   const [nodes, setNodes, onNodesChange] = useNodesState(storeNodes);
   const positionUpdateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasRestoredRef = useRef(false);
+  const reactFlowInstance = useReactFlow();
+  const prevCanvasIdRef = useRef(activeCanvasId);
+
+  const filteredNodes = useMemo(
+    () => nodes.filter((n) => (n.data?.canvasId || "default") === activeCanvasId),
+    [nodes, activeCanvasId]
+  );
+
+  // Save/restore viewport when switching canvases
+  useEffect(() => {
+    if (prevCanvasIdRef.current !== activeCanvasId) {
+      const viewport = reactFlowInstance.getViewport();
+      setCanvasViewport(prevCanvasIdRef.current, viewport);
+
+      const saved = canvasViewports[activeCanvasId];
+      if (saved) {
+        reactFlowInstance.setViewport(saved);
+      } else {
+        reactFlowInstance.fitView();
+      }
+      prevCanvasIdRef.current = activeCanvasId;
+    }
+  }, [activeCanvasId, reactFlowInstance, canvasViewports, setCanvasViewport]);
 
   // Sync nodes with store
   useEffect(() => {
@@ -111,7 +139,10 @@ function AppContent() {
       fetch("/api/state").then((res) => res.json()),
       fetch("/api/categories").then((res) => res.json()),
     ])
-      .then(([sessions, { nodes: savedNodes }, categories]) => {
+      .then(([sessions, { nodes: savedNodes, canvases: savedCanvases }, categories]) => {
+        if (savedCanvases && savedCanvases.length > 0) {
+          setCanvases(savedCanvases);
+        }
         const restoredNodes: any[] = [];
 
         // Restore categories first (they should be behind agents)
@@ -124,8 +155,9 @@ function AppContent() {
             data: {
               label: cat.label,
               color: cat.color,
+              canvasId: cat.canvasId || "default",
             },
-            zIndex: -1, // Behind agent nodes
+            zIndex: -1,
           });
         });
 
@@ -170,6 +202,7 @@ function AppContent() {
               color: session.customColor || agent?.color || "#888",
               icon: agent?.icon || "cpu",
               sessionId: session.sessionId,
+              canvasId: saved?.canvasId || "default",
             },
           });
         });
@@ -274,7 +307,7 @@ function AppContent() {
     setSidebarOpen(false);
   }, [setSelectedNodeId, setSidebarOpen]);
 
-  const isEmpty = nodes.length === 0;
+  const isEmpty = filteredNodes.length === 0;
 
   return (
     <div className="w-screen h-screen bg-canvas overflow-hidden flex flex-col">
@@ -282,7 +315,7 @@ function AppContent() {
 
       <div className="flex-1 relative">
         <ReactFlow
-          nodes={nodes}
+          nodes={filteredNodes}
           edges={[]}
           onNodesChange={handleNodesChange}
           onNodeClick={onNodeClick}

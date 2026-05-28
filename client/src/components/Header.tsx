@@ -1,42 +1,163 @@
-import { useState } from "react";
-import { Plus, Folder, Settings } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Plus, Folder, Settings, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { useStore } from "../stores/useStore";
 import { SettingsModal } from "./SettingsModal";
 
 export function Header() {
-  const { setAddAgentModalOpen, sessions, launchCwd } = useStore();
+  const {
+    setAddAgentModalOpen,
+    launchCwd,
+    canvases,
+    activeCanvasId,
+    setActiveCanvasId,
+    addCanvas,
+    removeCanvas,
+    renameCanvas,
+    sessions,
+    nodes,
+  } = useStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
+
+  const handleAddCanvas = () => {
+    const id = `canvas-${Date.now()}`;
+    const name = `Canvas ${canvases.length + 1}`;
+    addCanvas({ id, name });
+    setActiveCanvasId(id);
+    fetch("/api/canvases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name }),
+    }).catch(console.error);
+  };
+
+  const handleDeleteCanvas = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (canvases.length <= 1) return;
+    const hasNodes = nodes.some((n) => (n.data?.canvasId || "default") === id);
+    if (hasNodes && !window.confirm("This canvas has agents on it. Delete anyway?")) return;
+    removeCanvas(id);
+    if (activeCanvasId === id) {
+      const remaining = canvases.filter((c) => c.id !== id);
+      setActiveCanvasId(remaining[0]?.id || "default");
+    }
+    fetch(`/api/canvases/${id}`, { method: "DELETE" }).catch(console.error);
+  };
+
+  const handleDoubleClick = (id: string, name: string) => {
+    setEditingId(id);
+    setEditValue(name);
+  };
+
+  const commitRename = () => {
+    if (editingId && editValue.trim()) {
+      renameCanvas(editingId, editValue.trim());
+      fetch(`/api/canvases/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editValue.trim() }),
+      }).catch(console.error);
+    }
+    setEditingId(null);
+  };
+
+  const agentCount = (canvasId: string) => {
+    let count = 0;
+    for (const [nodeId] of sessions) {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node && (node.data?.canvasId || "default") === canvasId) count++;
+    }
+    return count;
+  };
 
   return (
-    <header className="h-14 px-4 flex items-center justify-between border-b border-border bg-canvas-dark">
+    <header className="h-14 px-4 flex items-center border-b border-border bg-canvas-dark gap-3">
       {/* Logo */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 to-orange-500 flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-white" />
-          </div>
-          <span className="text-sm font-semibold text-white">OpenUI</span>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 to-orange-500 flex items-center justify-center">
+          <div className="w-2 h-2 rounded-full bg-white" />
         </div>
-        
-        <div className="h-4 w-px bg-border mx-2" />
-        
-        <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-          <Folder className="w-3 h-3" />
-          <span className="font-mono truncate max-w-[200px]">{launchCwd || "~"}</span>
-        </div>
+        <span className="text-sm font-semibold text-white">OpenUI</span>
       </div>
 
-      {/* Center - Session count */}
-      <div className="absolute left-1/2 -translate-x-1/2">
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface text-xs text-zinc-400">
-          <div className={`w-1.5 h-1.5 rounded-full ${sessions.size > 0 ? 'bg-green-500' : 'bg-zinc-600'}`} />
-          <span>{sessions.size} agent{sessions.size !== 1 ? "s" : ""}</span>
-        </div>
+      <div className="h-4 w-px bg-border flex-shrink-0" />
+
+      <div className="flex items-center gap-1.5 text-xs text-zinc-500 flex-shrink-0">
+        <Folder className="w-3 h-3" />
+        <span className="font-mono truncate max-w-[150px]">{launchCwd || "~"}</span>
+      </div>
+
+      <div className="h-4 w-px bg-border flex-shrink-0" />
+
+      {/* Canvas tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide">
+        {canvases.map((canvas) => {
+          const isActive = canvas.id === activeCanvasId;
+          const count = agentCount(canvas.id);
+          return (
+            <button
+              key={canvas.id}
+              onClick={() => setActiveCanvasId(canvas.id)}
+              onDoubleClick={() => handleDoubleClick(canvas.id, canvas.name)}
+              className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex-shrink-0 ${
+                isActive
+                  ? "bg-surface-active text-white"
+                  : "text-zinc-500 hover:text-zinc-300 hover:bg-surface"
+              }`}
+            >
+              {editingId === canvas.id ? (
+                <input
+                  ref={editInputRef}
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                  className="bg-transparent border-b border-zinc-500 text-white text-xs w-20 outline-none"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span className="truncate max-w-[100px]">{canvas.name}</span>
+              )}
+              {count > 0 && (
+                <span className={`text-[10px] px-1 rounded-full ${
+                  isActive ? "bg-zinc-600 text-zinc-300" : "bg-zinc-800 text-zinc-500"
+                }`}>
+                  {count}
+                </span>
+              )}
+              {canvases.length > 1 && editingId !== canvas.id && (
+                <X
+                  className="w-3 h-3 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => handleDeleteCanvas(canvas.id, e)}
+                />
+              )}
+            </button>
+          );
+        })}
+        <button
+          onClick={handleAddCanvas}
+          className="w-6 h-6 rounded-md flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-surface transition-colors flex-shrink-0"
+          title="New canvas"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Right side buttons */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <button
           onClick={() => setSettingsOpen(true)}
           className="p-2 rounded-md text-zinc-400 hover:text-white hover:bg-surface-active transition-colors"

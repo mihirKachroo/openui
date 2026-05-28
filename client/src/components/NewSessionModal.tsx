@@ -150,6 +150,7 @@ export function NewSessionModal({
     updateSession,
     nodes,
     launchCwd,
+    activeCanvasId,
   } = useStore();
 
   // Get ReactFlow instance to access viewport
@@ -401,6 +402,7 @@ export function NewSessionModal({
             nodeId: existingNodeId,
             customName: customName || existingSession.customName,
             customColor: existingSession.customColor,
+            canvasId: activeCanvasId,
             // Ticket info if selected (Linear or GitHub)
             ...(selectedTicket && {
               ticketId: selectedTicket.identifier,
@@ -467,6 +469,7 @@ export function NewSessionModal({
               cwd: workingDir,
               nodeId,
               customName: count > 1 ? agentName : customName || undefined,
+              canvasId: activeCanvasId,
               // Ticket info if selected (only for first agent)
               ...(i === 0 && selectedTicket && {
                 ticketId: selectedTicket.identifier,
@@ -501,6 +504,7 @@ export function NewSessionModal({
               color: selectedAgent.color,
               icon: selectedAgent.icon,
               sessionId,
+              canvasId: activeCanvasId,
             },
           });
 

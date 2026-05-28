@@ -41,6 +41,8 @@ export interface Session {
   // Permission detection
   preToolTime?: number;
   permissionTimeout?: ReturnType<typeof setTimeout>;
+  // Canvas assignment
+  canvasId?: string;
 }
 
 export interface LinearTicket {
@@ -74,6 +76,7 @@ export interface PersistedNode {
   customColor?: string;
   notes?: string;
   position: { x: number; y: number };
+  canvasId?: string;
 }
 
 export interface PersistedCategory {
@@ -83,11 +86,18 @@ export interface PersistedCategory {
   position: { x: number; y: number };
   width: number;
   height: number;
+  canvasId?: string;
+}
+
+export interface PersistedCanvas {
+  id: string;
+  name: string;
 }
 
 export interface PersistedState {
   nodes: PersistedNode[];
   categories?: PersistedCategory[];
+  canvases?: PersistedCanvas[];
 }
 
 export interface Agent {

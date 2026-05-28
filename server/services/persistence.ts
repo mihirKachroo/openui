@@ -32,10 +32,11 @@ export function saveState(sessions: Map<string, Session>) {
   ensureDirs();
   const savedState = loadState();
 
-  // Preserve categories from existing state
+  // Preserve categories and canvases from existing state
   const state: PersistedState = {
     nodes: [],
     categories: savedState.categories || [],
+    canvases: savedState.canvases,
   };
 
   for (const [sessionId, session] of sessions) {
@@ -55,6 +56,7 @@ export function saveState(sessions: Map<string, Session>) {
       notes: session.notes,
       icon: session.icon,
       position: session.position || existingNode?.position || { x: 0, y: 0 },
+      canvasId: session.canvasId,
     });
 
     saveBuffer(sessionId, session.outputBuffer);
@@ -113,6 +115,17 @@ export function loadBuffer(sessionId: string): string[] {
     console.error("Failed to load buffer:", e);
   }
   return [];
+}
+
+export function saveCanvases(canvases: { id: string; name: string }[]) {
+  ensureDirs();
+  const state = loadState();
+  state.canvases = canvases;
+  try {
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (e) {
+    console.error("Failed to save canvases:", e);
+  }
 }
 
 export function getDataDir() {

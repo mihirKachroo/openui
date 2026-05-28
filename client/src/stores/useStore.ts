@@ -70,6 +70,17 @@ interface AppState {
   setNewSessionModalOpen: (open: boolean) => void;
   newSessionForNodeId: string | null;
   setNewSessionForNodeId: (nodeId: string | null) => void;
+
+  // Canvases
+  canvases: { id: string; name: string }[];
+  activeCanvasId: string;
+  setCanvases: (canvases: { id: string; name: string }[]) => void;
+  addCanvas: (canvas: { id: string; name: string }) => void;
+  removeCanvas: (id: string) => void;
+  renameCanvas: (id: string, name: string) => void;
+  setActiveCanvasId: (id: string) => void;
+  canvasViewports: Record<string, { x: number; y: number; zoom: number }>;
+  setCanvasViewport: (id: string, viewport: { x: number; y: number; zoom: number }) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -133,4 +144,21 @@ export const useStore = create<AppState>((set) => ({
   setNewSessionModalOpen: (open) => set({ newSessionModalOpen: open }),
   newSessionForNodeId: null,
   setNewSessionForNodeId: (nodeId) => set({ newSessionForNodeId: nodeId }),
+
+  // Canvases
+  canvases: [{ id: "default", name: "Main" }],
+  activeCanvasId: "default",
+  setCanvases: (canvases) => set({ canvases }),
+  addCanvas: (canvas) => set((state) => ({ canvases: [...state.canvases, canvas] })),
+  removeCanvas: (id) => set((state) => ({
+    canvases: state.canvases.filter((c) => c.id !== id),
+  })),
+  renameCanvas: (id, name) => set((state) => ({
+    canvases: state.canvases.map((c) => c.id === id ? { ...c, name } : c),
+  })),
+  setActiveCanvasId: (id) => set({ activeCanvasId: id }),
+  canvasViewports: {},
+  setCanvasViewport: (id, viewport) => set((state) => ({
+    canvasViewports: { ...state.canvasViewports, [id]: viewport },
+  })),
 }));
