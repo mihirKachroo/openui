@@ -10,6 +10,15 @@ import type { WebSocketData } from "./types";
 const app = new Hono();
 const PORT = Number(process.env.PORT) || 6968;
 const QUIET = !!process.env.OPENUI_QUIET;
+// Optional TLS for a green lock behind the VPNLess proxy. Set both
+// OPENUI_TLS_CERT and OPENUI_TLS_KEY (e.g. the devserver cert under
+// /etc/pki/tls/certs); if either is missing we serve plain HTTP.
+const TLS_CERT = process.env.OPENUI_TLS_CERT;
+const TLS_KEY = process.env.OPENUI_TLS_KEY;
+const tls =
+  TLS_CERT && TLS_KEY
+    ? { cert: Bun.file(TLS_CERT), key: Bun.file(TLS_KEY) }
+    : undefined;
 
 // Conditionally log only in dev mode
 const log = QUIET ? () => {} : console.log.bind(console);
@@ -32,6 +41,7 @@ restoreSessions();
 // WebSocket server
 Bun.serve<WebSocketData>({
   port: PORT,
+  ...(tls ? { tls } : {}),
   fetch(req, server) {
     const url = new URL(req.url);
 
@@ -113,7 +123,7 @@ Bun.serve<WebSocketData>({
   },
 });
 
-log(`\x1b[38;5;141m[server]\x1b[0m Running on http://localhost:${PORT}`);
+log(`\x1b[38;5;141m[server]\x1b[0m Running on ${tls ? "https" : "http"}://localhost:${PORT}`);
 log(`\x1b[38;5;245m[server]\x1b[0m Launch directory: ${process.env.LAUNCH_CWD || process.cwd()}`);
 
 // Auto-resume saved sessions after a short delay
