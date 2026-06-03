@@ -67,6 +67,11 @@ function AppContent() {
       const viewport = reactFlowInstance.getViewport();
       setCanvasViewport(prevCanvasIdRef.current, viewport);
 
+      // Reset the open session sidebar — the selected node may live on the
+      // canvas we just left, so dismiss it on every switch.
+      setSelectedNodeId(null);
+      setSidebarOpen(false);
+
       const saved = canvasViewports[activeCanvasId];
       if (saved) {
         reactFlowInstance.setViewport(saved);
@@ -75,7 +80,7 @@ function AppContent() {
       }
       prevCanvasIdRef.current = activeCanvasId;
     }
-  }, [activeCanvasId, reactFlowInstance, canvasViewports, setCanvasViewport]);
+  }, [activeCanvasId, reactFlowInstance, canvasViewports, setCanvasViewport, setSelectedNodeId, setSidebarOpen]);
 
   // Sync nodes with store
   useEffect(() => {
