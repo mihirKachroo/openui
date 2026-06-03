@@ -5,7 +5,7 @@ import { AgentStatus } from "../../stores/useStore";
 const statusConfig: Record<AgentStatus, { label: string; color: string; bgColor: string; isActive?: boolean; needsAttention?: boolean }> = {
   running: { label: "Working", color: "#22C55E", bgColor: "#22C55E15", isActive: true },
   tool_calling: { label: "Working", color: "#22C55E", bgColor: "#22C55E15", isActive: true },
-  waiting_input: { label: "Needs Input", color: "#F97316", bgColor: "#F9731620", needsAttention: true },
+  waiting_input: { label: "Needs Input", color: "#F97316", bgColor: "#F9731620" },
   idle: { label: "Idle", color: "#FBBF24", bgColor: "#FBBF2415", needsAttention: true },
   disconnected: { label: "Offline", color: "#6B7280", bgColor: "#6B728015" },
   error: { label: "Error", color: "#EF4444", bgColor: "#EF444415", needsAttention: true },
@@ -112,12 +112,9 @@ export function AgentNodeCard({
         />
       )}
 
-      {/* Color bar at top */}
-      <div className="h-1 rounded-t-lg" style={{ backgroundColor: displayColor }} />
-
       {/* Status banner */}
       <div
-        className="px-3 py-1.5 flex items-center justify-between relative"
+        className="px-3 py-1.5 flex items-center justify-between relative rounded-t-lg"
         style={{ backgroundColor: statusInfo.bgColor }}
       >
         <div className="flex items-center gap-2">
