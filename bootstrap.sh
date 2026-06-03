@@ -6,23 +6,18 @@
 # builds the client, and starts the server. Safe to re-run — finished steps are
 # skipped, so the same command also works as a plain "start / restart".
 #
-# Quick start (you already have the repo):
+# Run it on the devserver:
 #     ./bootstrap.sh
 #
-# Quick start (fresh machine, nothing installed) — run in an INTERACTIVE shell
-# (GitHub egress is blocked from tool sandboxes):
+# Fresh machine (nothing installed) — run in an INTERACTIVE shell (GitHub is
+# blocked from tool sandboxes):
 #     bash -c "$(curl -fsSL --proxy http://fwdproxy:8080 \
 #       https://raw.githubusercontent.com/mihirKachroo/openui/main/bootstrap.sh)"
 #
-# Easiest — ONE command, run on your LAPTOP:
-#     ./bootstrap.sh --connect <devserver>
-# It starts OpenUI on the devserver, tunnels it to http://localhost:PORT, and
-# opens it — no browser warning, terminals work. (A tunnel is required: the
-# no-tunnel VPNLess proxies drop WebSocket upgrades, which the terminals need.)
-#
-# Manual equivalent: ssh -L PORT:localhost:PORT <devserver>, then open
-# http://localhost:PORT. No-tunnel http://<host>.fbinfra.net:PORT also loads,
-# but Chrome shows "Not secure" and the terminal WebSockets may not survive.
+# Then open the printed  http://<host>.fbinfra.net:PORT  in Chrome (with the
+# VPNLess WWW extension). Chrome shows "Not secure" because it's plain HTTP, but
+# the VPNLess proxy keeps the traffic private and only you can reach it. (Want a
+# clean lock? ssh -L PORT:localhost:PORT <host>, then http://localhost:PORT.)
 #
 # Options:
 #     --setup-only   Install + build but don't start the server
@@ -30,7 +25,6 @@
 #     --fg           Run the server in the foreground (Ctrl-C to stop)
 #     --stop         Stop any running OpenUI server and exit
 #     --force        Allow restart even from inside an OpenUI-hosted terminal
-#     --connect HOST Laptop mode: start OpenUI on HOST + tunnel + open browser
 #     -h, --help     Show this help
 #
 # Env overrides:
@@ -63,20 +57,18 @@ else
   OPENUI_DIR="${OPENUI_DIR:-$HOME/openui}"
 fi
 
-SETUP_ONLY=0; REBUILD=0; FOREGROUND=0; STOP_ONLY=0; FORCE=0; CONNECT_HOST=""
+SETUP_ONLY=0; REBUILD=0; FOREGROUND=0; STOP_ONLY=0; FORCE=0
 usage() { sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//; s/^set -euo.*//'; }
-while [ $# -gt 0 ]; do
-  case "$1" in
+for arg in "$@"; do
+  case "$arg" in
     --setup-only) SETUP_ONLY=1 ;;
     --rebuild)    REBUILD=1 ;;
     --fg|--foreground) FOREGROUND=1 ;;
     --stop)       STOP_ONLY=1 ;;
     --force)      FORCE=1 ;;
-    --connect)    shift; CONNECT_HOST="${1:-}"; [ -n "$CONNECT_HOST" ] || { echo "--connect needs a devserver host" >&2; exit 2; } ;;
     -h|--help)    usage; exit 0 ;;
-    *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
+    *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
   esac
-  shift
 done
 
 c_info=$'\033[1;36m'; c_warn=$'\033[1;33m'; c_err=$'\033[1;31m'; c_off=$'\033[0m'
@@ -105,23 +97,6 @@ stop_server() {
 }
 
 if [ "$STOP_ONLY" = 1 ]; then stop_server; exit 0; fi
-
-# ---- Laptop mode: --connect <devserver> ------------------------------------
-# Run on your LAPTOP: starts OpenUI on the devserver AND tunnels it to localhost
-# in one shot, then opens the browser. A tunnel is required — Chrome trusts
-# localhost (no warning) and, more importantly, the terminal WebSockets only
-# work over a direct tunnel (the VPNLess proxies drop ws upgrades).
-if [ -n "$CONNECT_HOST" ]; then
-  unset https_proxy http_proxy 2>/dev/null || true   # laptop has no fwdproxy
-  remote="${OPENUI_REMOTE:-\$HOME/fbsource/users/mk/mkachroo/openui/bootstrap.sh}"
-  url="http://localhost:${OPENUI_PORT}"
-  log "Starting OpenUI on ${CONNECT_HOST}; opening ${url} when ready (Ctrl-C stops both)"
-  ( for _ in $(seq 1 180); do
-      curl -fsS -o /dev/null "$url" 2>/dev/null && { (open "$url" 2>/dev/null || xdg-open "$url" 2>/dev/null) || true; break; }
-      sleep 2
-    done ) &
-  exec ssh -t -L "${OPENUI_PORT}:localhost:${OPENUI_PORT}" "$CONNECT_HOST" "$remote --fg"
-fi
 
 # ---- 1. Bun ----------------------------------------------------------------
 export PATH="$BUN_DIR:$PATH"
@@ -165,8 +140,6 @@ if [ "$SETUP_ONLY" = 1 ]; then
 fi
 
 # ---- 5. Start --------------------------------------------------------------
-# Serve plain HTTP. View it via --connect / an ssh -L tunnel (http://localhost,
-# no warning) or the VPNLess URL (http://<host>.fbinfra.net, shown "Not secure").
 stop_server
 export PORT="$OPENUI_PORT"
 export LAUNCH_CWD="${LAUNCH_CWD:-$OPENUI_DIR}"
@@ -177,10 +150,10 @@ echo
 echo "========================================="
 echo " OpenUI — AI Agent Command Center"
 echo "========================================="
-echo " No warning (recommended) — run on your laptop:"
-echo "   ssh -L ${OPENUI_PORT}:localhost:${OPENUI_PORT} ${host}"
-echo "   then open  http://localhost:${OPENUI_PORT}   (Chrome trusts localhost)"
-echo " No tunnel:  http://${vpnless}:${OPENUI_PORT}   (loads, but \"Not secure\" + terminals may drop)"
+echo " Open in Chrome:  http://${vpnless}:${OPENUI_PORT}"
+echo "   (plain HTTP — Chrome says \"Not secure\", but VPNLess keeps it private)"
+echo " SSH tunnel:      ssh -L ${OPENUI_PORT}:localhost:${OPENUI_PORT} ${host}"
+echo "                  then http://localhost:${OPENUI_PORT}"
 echo " Bun $(bun --version) | HTTP :${OPENUI_PORT}"
 echo "========================================="
 echo
