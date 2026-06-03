@@ -140,7 +140,9 @@ function AppContent() {
       fetch("/api/categories").then((res) => res.json()),
     ])
       .then(([sessions, { nodes: savedNodes, canvases: savedCanvases }, categories]) => {
-        if (savedCanvases && savedCanvases.length > 0) {
+        // Store prepends the pinned "Main" canvas, so pass whatever the server
+        // has (possibly empty) and Main is guaranteed to remain selectable.
+        if (savedCanvases) {
           setCanvases(savedCanvases);
         }
         const restoredNodes: any[] = [];

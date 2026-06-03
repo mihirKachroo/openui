@@ -83,6 +83,17 @@ interface AppState {
   setCanvasViewport: (id: string, viewport: { x: number; y: number; zoom: number }) => void;
 }
 
+// The "Main" canvas is virtual: it always exists but is never persisted to the
+// server. Keep it pinned to the front of the list so it shows even when the
+// server only returns the canvases the user explicitly created.
+export const DEFAULT_CANVAS = { id: "default", name: "Main" };
+
+function withDefaultCanvas(
+  canvases: { id: string; name: string }[]
+): { id: string; name: string }[] {
+  return [DEFAULT_CANVAS, ...canvases.filter((c) => c.id !== "default")];
+}
+
 export const useStore = create<AppState>((set) => ({
   // Config
   launchCwd: "",
@@ -145,13 +156,14 @@ export const useStore = create<AppState>((set) => ({
   newSessionForNodeId: null,
   setNewSessionForNodeId: (nodeId) => set({ newSessionForNodeId: nodeId }),
 
-  // Canvases
-  canvases: [{ id: "default", name: "Main" }],
+  // Canvases — "Main" (default) is always present and pinned first.
+  canvases: [DEFAULT_CANVAS],
   activeCanvasId: "default",
-  setCanvases: (canvases) => set({ canvases }),
-  addCanvas: (canvas) => set((state) => ({ canvases: [...state.canvases, canvas] })),
+  setCanvases: (canvases) => set({ canvases: withDefaultCanvas(canvases) }),
+  addCanvas: (canvas) =>
+    set((state) => ({ canvases: withDefaultCanvas([...state.canvases, canvas]) })),
   removeCanvas: (id) => set((state) => ({
-    canvases: state.canvases.filter((c) => c.id !== id),
+    canvases: withDefaultCanvas(state.canvases.filter((c) => c.id !== id)),
   })),
   renameCanvas: (id, name) => set((state) => ({
     canvases: state.canvases.map((c) => c.id === id ? { ...c, name } : c),

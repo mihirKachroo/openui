@@ -31,7 +31,16 @@ export function Header() {
 
   const handleAddCanvas = () => {
     const id = `canvas-${Date.now()}`;
-    const name = `Canvas ${canvases.length + 1}`;
+    // Pick the lowest free "Canvas N" so names don't collide after deletes.
+    const used = new Set(
+      canvases
+        .map((c) => /^Canvas (\d+)$/.exec(c.name)?.[1])
+        .filter((n): n is string => !!n)
+        .map(Number)
+    );
+    let n = 2;
+    while (used.has(n)) n++;
+    const name = `Canvas ${n}`;
     addCanvas({ id, name });
     setActiveCanvasId(id);
     fetch("/api/canvases", {
@@ -43,7 +52,7 @@ export function Header() {
 
   const handleDeleteCanvas = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (canvases.length <= 1) return;
+    if (id === "default") return; // Main is pinned and can't be deleted
     const hasNodes = nodes.some((n) => (n.data?.canvasId || "default") === id);
     if (hasNodes && !window.confirm("This canvas has agents on it. Delete anyway?")) return;
     removeCanvas(id);
@@ -55,6 +64,7 @@ export function Header() {
   };
 
   const handleDoubleClick = (id: string, name: string) => {
+    if (id === "default") return; // Main is pinned and can't be renamed
     setEditingId(id);
     setEditValue(name);
   };
@@ -103,13 +113,15 @@ export function Header() {
       <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide">
         {canvases.map((canvas) => {
           const isActive = canvas.id === activeCanvasId;
+          const isPinned = canvas.id === "default";
           const count = agentCount(canvas.id);
           return (
             <button
               key={canvas.id}
               onClick={() => setActiveCanvasId(canvas.id)}
               onDoubleClick={() => handleDoubleClick(canvas.id, canvas.name)}
-              className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex-shrink-0 ${
+              title={isPinned ? "Main canvas" : "Double-click to rename"}
+              className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex-shrink-0 ${
                 isActive
                   ? "bg-surface-active text-white"
                   : "text-zinc-500 hover:text-zinc-300 hover:bg-surface"
@@ -129,7 +141,7 @@ export function Header() {
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
-                <span className="truncate max-w-[100px]">{canvas.name}</span>
+                <span className="truncate max-w-[120px]">{canvas.name}</span>
               )}
               {count > 0 && (
                 <span className={`text-[10px] px-1 rounded-full ${
@@ -138,11 +150,14 @@ export function Header() {
                   {count}
                 </span>
               )}
-              {canvases.length > 1 && editingId !== canvas.id && (
+              {!isPinned && editingId !== canvas.id && (
                 <X
                   className="w-3 h-3 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => handleDeleteCanvas(canvas.id, e)}
                 />
+              )}
+              {isActive && (
+                <span className="absolute -bottom-px left-2 right-2 h-0.5 rounded-full bg-gradient-to-r from-violet-500 to-orange-500" />
               )}
             </button>
           );
